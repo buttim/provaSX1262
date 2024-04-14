@@ -3,12 +3,16 @@
 #include "sx126x.h"
 #include "sx126x_regs.h"
 #include "sx126x_hal.h"
+#include "sx126x_long_pkt.h"
 
 #undef LED_BUILTIN
 #define LED_BUILTIN 2
 const int RADIO_SCLK_PIN = 18, RADIO_MISO_PIN = 19, RADIO_MOSI_PIN = 23, RADIO_NSS_PIN = 5,
           RADIO_BUSY_PIN = 4, RADIO_RST_PIN = 16, RADIO_DIO1_PIN = 22, RADIO_DIO2_PIN = 21;
 SPISettings spiSettings = SPISettings(2E6L, MSBFIRST, SPI_MODE0);
+struct sx126x_long_pkt_rx_state pktRxState;
+
+// clang-format off
 const uint8_t flipByte[] = {
     0x00, 0x80, 0x40, 0xC0, 0x20, 0xA0, 0x60, 0xE0, 0x10, 0x90, 0x50, 0xD0, 0x30, 0xB0, 0x70, 0xF0,
     0x08, 0x88, 0x48, 0xC8, 0x28, 0xA8, 0x68, 0xE8, 0x18, 0x98, 0x58, 0xD8, 0x38, 0xB8, 0x78, 0xF8,
@@ -27,17 +31,13 @@ const uint8_t flipByte[] = {
     0x07, 0x87, 0x47, 0xC7, 0x27, 0xA7, 0x67, 0xE7, 0x17, 0x97, 0x57, 0xD7, 0x37, 0xB7, 0x77, 0xF7,
     0x0F, 0x8F, 0x4F, 0xCF, 0x2F, 0xAF, 0x6F, 0xEF, 0x1F, 0x9F, 0x5F, 0xDF, 0x3F, 0xBF, 0x7F, 0xFF
   },
-  whitening[]={
-    0x32, 0x05, 0x59, 0x0E, 0xF9, 0x44, 0xC6, 0x26,
-    0x21, 0x60, 0xC2, 0xEA, 0x79, 0x5D, 0x6D, 0xA1,
-    0x54, 0x69, 0x47, 0x0C, 0xDC, 0xE8, 0x5C, 0xF1,
-    0xF7, 0x76, 0x82, 0x7F, 0x07, 0x99, 0xA2, 0x2C,
-    0x93, 0x7C, 0x30, 0x63, 0xF5, 0x10, 0x2E, 0x61,
-    0xD0, 0xBC, 0xB4, 0xB6, 0x06, 0xAA, 0xF4, 0x23,
-    0x78, 0x6E, 0x3B, 0xAE, 0xBF, 0x7B, 0x4C, 0xC1,
-    0x96, 0x83, 0x3E, 0x51, 0xB1, 0x49, 0x08, 0x98
+  whitening[] = { 
+    0x32, 0x05, 0x59, 0x0E, 0xF9, 0x44, 0xC6, 0x26, 0x21, 0x60, 0xC2, 0xEA, 0x79, 0x5D, 0x6D, 0xA1, 
+    0x54, 0x69, 0x47, 0x0C, 0xDC, 0xE8, 0x5C, 0xF1, 0xF7, 0x76, 0x82, 0x7F, 0x07, 0x99, 0xA2, 0x2C, 
+    0x93, 0x7C, 0x30, 0x63, 0xF5, 0x10, 0x2E, 0x61, 0xD0, 0xBC, 0xB4, 0xB6, 0x06, 0xAA, 0xF4, 0x23, 
+    0x78, 0x6E, 0x3B, 0xAE, 0xBF, 0x7B, 0x4C, 0xC1, 0x96, 0x83, 0x3E, 0x51, 0xB1, 0x49, 0x08, 0x98 
   };
-
+// clang-format on
 sx126x_hal_status_t sx126x_hal_write(const void* context, const uint8_t* command, const uint16_t command_length,
                                      const uint8_t* data, const uint16_t data_length) {
   int i;
@@ -115,7 +115,7 @@ void setup() {
     .sync_word_len_in_bits = 64,
     .address_filtering = SX126X_GFSK_ADDRESS_FILTERING_DISABLE,
     .header_type = SX126X_GFSK_PKT_FIX_LEN,
-    .pld_len_in_bytes = 88,  ////////////////////////
+    .pld_len_in_bytes = 255,
     .crc_type = SX126X_GFSK_CRC_OFF,
     .dc_free = SX126X_GFSK_DC_FREE_OFF
   };
@@ -130,9 +130,9 @@ void setup() {
   Serial.printf("sx126x_set_rf_freq %d\n", res);
   res = sx126x_set_gfsk_mod_params(NULL, &modParams);
   Serial.printf("sx126x_set_gfsk_mod_params %d\n", res);
-  res = sx126x_set_gfsk_pkt_params(NULL, &pktParams);
-  Serial.printf("sx126x_set_gfsk_pkt_params %d\n", res);
-  res = sx126x_set_dio_irq_params(NULL, SX126X_IRQ_RX_DONE | SX126X_IRQ_SYNC_WORD_VALID, SX126X_IRQ_RX_DONE, SX126X_IRQ_SYNC_WORD_VALID, SX126X_IRQ_NONE);
+  res = sx126x_long_pkt_rx_set_gfsk_pkt_params(NULL, &pktParams);
+  Serial.printf("sx126x_long_pkt_rx_set_gfsk_pkt_params %d\n", res);
+  res = sx126x_set_dio_irq_params(NULL, SX126X_IRQ_SYNC_WORD_VALID, SX126X_IRQ_SYNC_WORD_VALID, SX126X_IRQ_NONE, SX126X_IRQ_NONE);
   Serial.printf("sx126x_set_dio_irq_params %d\n", res);
   uint8_t syncWord[] = { 0x10, 0xB6, 0xCA, 0x11, 0x22, 0x96, 0x12, 0xF8 };
   for (int i = 0; i < sizeof syncWord; i++)
@@ -143,36 +143,11 @@ void setup() {
   res = sx126x_cal_img(NULL, 0x6B, 0x6F);
   // uint8_t val = 0x96;
   // res = sx126x_write_register(NULL, SX126X_REG_RXGAIN, &val, 1);
-  res = sx126x_set_rx_with_timeout_in_rtc_step(NULL, SX126X_RX_CONTINUOUS);
-  Serial.printf("sx126x_set_rx %d\n", res);
+
+  res = sx126x_long_pkt_set_rx_with_timeout_in_rtc_step(NULL, &pktRxState, SX126X_RX_CONTINUOUS);
+  Serial.printf("sx126x_long_pkt_set_rx %d\n", res);
   res = sx126x_clear_device_errors(NULL);
 }
-
-/*const char* chipModeDesc(uint8_t mode) {
-  switch (mode) {
-    case SX126X_CHIP_MODE_UNUSED: return "unused";
-    case SX126X_CHIP_MODE_RFU: return "RFU";
-    case SX126X_CHIP_MODE_STBY_RC: return "stby_rc";
-    case SX126X_CHIP_MODE_STBY_XOSC: return "stby_xosc";
-    case SX126X_CHIP_MODE_FS: return "FS";
-    case SX126X_CHIP_MODE_RX: return "RX";
-    case SX126X_CHIP_MODE_TX: return "TX";
-    default: return "???";
-  }
-}
-
-const char* statusDesc(uint8_t s) {
-  switch (s) {
-    case SX126X_CMD_STATUS_RESERVED: return "reserved";
-    case SX126X_CMD_STATUS_RFU: return "RFU";
-    case SX126X_CMD_STATUS_DATA_AVAILABLE: return "data available";
-    case SX126X_CMD_STATUS_CMD_TIMEOUT: return "cmd timeout";
-    case SX126X_CMD_STATUS_CMD_PROCESS_ERROR: return "cmd processor error";
-    case SX126X_CMD_STATUS_CMD_EXEC_FAILURE: return "cmd exec failure";
-    case SX126X_CMD_STATUS_CMD_TX_DONE: return "cmd tx done";
-    default: return "???";
-  }
-}*/
 
 void dump(uint8_t buf[], int size) {
   for (int i = 0; i < size; i++)
@@ -181,22 +156,33 @@ void dump(uint8_t buf[], int size) {
   if (size % 16 != 0) Serial.println();
 }
 
+uint8_t buf[312];
+int nBytesRead = 0;
+
 void loop() {
+  static uint64_t tLastRead = 0;
   sx126x_status_t res;
   sx126x_pkt_status_gfsk_t pktStatus;
   sx126x_rx_buffer_status_t bufStatus;
 
   digitalWrite(LED_BUILTIN, digitalRead(RADIO_DIO1_PIN));
   if (digitalRead(RADIO_DIO1_PIN) == HIGH) {
-    res = sx126x_get_gfsk_pkt_status(NULL, &pktStatus);
-    Serial.printf("PKT rssi_sync: %d, rssi_avg: %d\n", pktStatus.rssi_sync, pktStatus.rssi_avg);
-
-    uint8_t buf[256] = {};
-    res = sx126x_get_rx_buffer_status(NULL, &bufStatus);
-    res = sx126x_read_buffer(NULL, bufStatus.buffer_start_pointer, buf, bufStatus.pld_len_in_bytes);
-    for (int i = 0; i < bufStatus.pld_len_in_bytes; i++)
-      buf[i] = whitening[i]^flipByte[buf[i]];
-    dump(buf, bufStatus.pld_len_in_bytes);
-    res = sx126x_clear_irq_status(NULL, SX126X_IRQ_RX_DONE);
+    Serial.println("SYNC");
+    tLastRead = millis();
+    res = sx126x_clear_irq_status(NULL, SX126X_IRQ_SYNC_WORD_VALID);
+  }
+  if (tLastRead != 0 && millis() - tLastRead > 300) {
+    Serial.println("READ");
+    tLastRead = millis();
+    uint8_t read;
+    res = sx126x_long_pkt_rx_get_partial_payload(NULL, &pktRxState, buf + nBytesRead, sizeof buf - nBytesRead, &read);
+    nBytesRead += read;
+    if (nBytesRead == sizeof buf) {
+      tLastRead = 0;
+      nBytesRead = 0;
+      for (int i = 0; i < sizeof buf; i++)
+        buf[i] = whitening[i % sizeof whitening] ^ flipByte[buf[i]];
+      dump(buf, sizeof buf);
+    }
   }
 }
