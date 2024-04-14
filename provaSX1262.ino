@@ -107,7 +107,7 @@ void setup() {
     .br_in_bps = 4800,
     .fdev_in_hz = 3600,                          //?
     .pulse_shape = SX126X_GFSK_PULSE_SHAPE_OFF,  //?
-    .bw_dsb_param = SX126X_GFSK_BW_9700
+    .bw_dsb_param = SX126X_GFSK_BW_9700          //?
   };
   sx126x_pkt_params_gfsk_t pktParams = {
     .preamble_len_in_bits = 320,
@@ -169,15 +169,31 @@ void loop() {
   if (digitalRead(RADIO_DIO1_PIN) == HIGH) {
     Serial.println("SYNC");
     tLastRead = millis();
+    nBytesRead = 0;
     res = sx126x_clear_irq_status(NULL, SX126X_IRQ_SYNC_WORD_VALID);
   }
+  if (tLastRead != 0 && millis() - tLastRead > 1000) {
+    res = sx126x_long_pkt_rx_prepare_for_last(NULL, &pktRxState, 0);
+    tLastRead = 0;
+    nBytesRead = 0;
+  }
   if (tLastRead != 0 && millis() - tLastRead > 300) {
-    Serial.println("READ");
     tLastRead = millis();
     uint8_t read;
     res = sx126x_long_pkt_rx_get_partial_payload(NULL, &pktRxState, buf + nBytesRead, sizeof buf - nBytesRead, &read);
+    if (read==0) {
+      tLastRead = 0;
+      nBytesRead = 0;
+      return;      
+    }
+    Serial.printf("READ %d\n",read);
     nBytesRead += read;
+    if (sizeof buf - nBytesRead <= 255) {
+      res = sx126x_long_pkt_rx_prepare_for_last(NULL, &pktRxState, sizeof buf - nBytesRead);
+    }
     if (nBytesRead == sizeof buf) {
+      sx126x_long_pkt_rx_complete(NULL);
+      sx126x_long_pkt_set_rx_with_timeout_in_rtc_step(NULL, &pktRxState, SX126X_RX_CONTINUOUS);
       tLastRead = 0;
       nBytesRead = 0;
       for (int i = 0; i < sizeof buf; i++)
