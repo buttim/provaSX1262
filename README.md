@@ -6,3 +6,7 @@ Since the sonde's packets are longer than 255 byte we need to use a hack, as rec
 A few modifications to the library's source were needed since it has not been updated to the latest version of the SX1262 driver.
 
 The code is written for receiving an RS41-SG, so a fixed payload of 312 bytes is assumed, but could be easily modified to decide the payload length on the fly (e.g. for receiving an RS41-SG+XDATA, i.e. a sonde with ozone sensor attached)
+
+Differences with SX1278
+---
+The two chips are completely different. From a programmer's perspective the two main points of attention are the cited limitation on packet length and bit order, that is reversed for the SX1262. This means you have to pay attention (flip bytes) when programming the sync word and receiving the actal payload.
